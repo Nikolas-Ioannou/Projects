@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<title>Πλοήγηση Δημοπρασιών</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #f6f7fb; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; background:#111; color:#fff; }
+  header h1 { margin: 0; font-size: 24px; }
+  header .user-actions { display: flex; align-items: center; gap: 15px; }
+  header button { padding: 6px 12px; cursor: pointer; border-radius: 8px; border:none; background:#e9ecef; color:#111; }
+  main { display: flex; flex: 1; overflow: hidden; }
+  .filters { width: 250px; padding: 20px; border-left: 1px solid #ccc; background-color: #f9f9f9; box-sizing: border-box; }
+  .filters h2 { font-size: 18px; margin-top: 0; margin-bottom: 15px; }
+  .filters label { display: block; margin-top: 10px; }
+  .filters input { width: 100%; padding: 5px; margin-top: 5px; box-sizing: border-box; }
+  .filters button { margin-top: 15px; width: 100%; padding: 8px; background-color: #111; color: #fff; border: none; cursor: pointer; border-radius: 8px; }
+  .table-container { flex: 1; overflow: auto; padding: 20px; box-sizing: border-box; }
+  table { width: 100%; border-collapse: collapse; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.07);}
+  th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+  th { background-color: #f0f0f0; }
+  .pagination { display:flex; justify-content:center; align-items:center; gap:10px; margin-top:10px; }
+  .pagination button { padding:6px 12px; border-radius:8px; border:none; cursor:pointer; }
+  .pagination button:disabled { background:#e9ecef; color:#666; cursor:not-allowed; }
+  .auction-link { color: blue; text-decoration: underline; cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Αναζήτηση Δημοπρασιών</h1>
+  <div class="user-actions">
+    <span id="username">Χρήστης</span>
+    <button onclick="goHub()">⬅ Επιστροφή</button>
+  </div>
+</header>
+<main>
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Όνομα</th>
+          <th>Τρέχουσα Τιμή</th>
+          <th>Περιγραφή</th>
+          <th>Τοποθεσία</th>
+          <th>Λήξη</th>
+          <th>Πωλητής</th>
+          <th>Κατηγορίες</th>
+        </tr>
+      </thead>
+      <tbody id="auctionTableBody"></tbody>
+    </table>
+
+    <div class="pagination">
+      <button id="prevBtn" onclick="prevPage()">Προηγούμενη</button>
+      Σελίδα <span id="currentPage">1</span> από <span id="totalPages">1</span>
+      <button id="nextBtn" onclick="nextPage()">Επόμενη</button>
+    </div>
+  </div>
+  <div class="filters">
+    <h2>Φίλτρα</h2>
+    <label>Κατηγορία:
+      <input type="text" id="category">
+    </label>
+    <label>Περιγραφή:
+      <input type="text" id="description">
+    </label>
+    <label>Τιμή από:
+      <input type="number" id="minPrice" step="0.01">
+    </label>
+    <label>έως:
+      <input type="number" id="maxPrice" step="0.01">
+    </label>
+    <label>Τοποθεσία:
+      <input type="text" id="location">
+    </label>
+    <button onclick="applyFilters()">Φίλτρα</button>
+  </div>
+</main>
+<script>
+let page = 1;
+const pageSize = 10;
+let totalPages = 1;
+let filters = {};
+let username = null;
+async function initUser() {
+  try {
+    const res = await fetch('/api/current-user', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Not logged in');
+    const data = await res.json();
+    username = data.username;
+    document.getElementById('username').innerText = username;
+  } catch {
+    document.getElementById('username').innerText = 'Χρήστης';
+  }
+}
+async function fetchAuctions() {
+  const params = new URLSearchParams({ page, pageSize, ...filters });
+  try {
+    const res = await fetch('/api/auctions?' + params.toString(), { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Σφάλμα στη φόρτωση των δημοπρασιών');
+    const data = await res.json();
+    totalPages = data.totalPages || 1;
+    renderTable(data.auctions || []);
+    updatePagination();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+function renderTable(auctions) {
+  const tbody = document.getElementById('auctionTableBody');
+  tbody.innerHTML = '';
+  if (!auctions.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center">Δεν βρέθηκαν δημοπρασίες</td></tr>';
+    return;
+  }
+  auctions.forEach(a => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${a.id}</td>
+      <td><a class="auction-link" href="item.html?id=${a.id}">${a.name}</a></td>
+      <td>${Number(a.currently).toFixed(2)}</td>
+      <td>${a.description || '-'}</td>
+      <td>${a.location}</td>
+      <td>${new Date(a.ends).toLocaleString('el-GR')}</td>
+      <td>${a.seller}</td>
+      <td>${a.categories || '-'}</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+function updatePagination() {
+  document.getElementById('currentPage').innerText = page;
+  document.getElementById('totalPages').innerText = totalPages;
+  document.getElementById('prevBtn').disabled = page <= 1;
+  document.getElementById('nextBtn').disabled = page >= totalPages;
+}
+function applyFilters() {
+  filters = {
+    category: document.getElementById('category').value.trim(),
+    description: document.getElementById('description').value.trim(),
+    minPrice: document.getElementById('minPrice').value.trim(),
+    maxPrice: document.getElementById('maxPrice').value.trim(),
+    location: document.getElementById('location').value.trim()
+  };
+  page = 1;
+  fetchAuctions();
+}
+function prevPage() {
+  if (page > 1) { page--; fetchAuctions(); }
+}
+function nextPage() {
+  if (page < totalPages) { page++; fetchAuctions(); }
+}
+function goHub() {
+  window.location.href = '/hub.html';
+}
+// Initialize
+initUser();
+fetchAuctions();
+</script>
+</body>
+</html>

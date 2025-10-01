@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="utf-8" />
+<title>Μηνύματα</title>
+<style>
+body { font-family: Arial, sans-serif; margin:0; background:#f6f7fb; }
+header { display:flex; align-items:center; gap:12px; padding:16px 24px; background:#111; color:#fff; }
+main { padding:20px; max-width:1100px; margin:0 auto; display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+h1,h2,h3 { margin:12px 0; }
+.card { background:#fff; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,.07); padding:16px; }
+label { display:block; margin:8px 0 4px; font-weight:600; }
+input, textarea { width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; box-sizing:border-box; }
+textarea { resize:vertical; min-height:60px; }
+button { padding:10px 14px; border:none; border-radius:8px; cursor:pointer; }
+.primary { background:#111; color:#fff; }
+.secondary { background:#e9ecef; }
+.danger { background:#dc3545; color:#fff; }
+.muted { color:#666; font-size:13px; }
+.list { display:grid; gap:12px; margin-top:10px; }
+.card-small { padding:10px; background:#fff; border-radius:8px; border:1px solid #eee; }
+.toolbar { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+.red-circle { background:red; color:#fff; border-radius:50%; padding:2px 6px; font-size:12px; margin-left:6px; }
+.nav-buttons { display:flex; gap:10px; margin-bottom:10px; }
+.nav-buttons button { position: relative; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Μηνύματα</h1>
+  <div style="margin-left:auto;" id="who"></div>
+  <button class="secondary" style="margin-left:12px" onclick="goHub()">⬅ Επιστροφή</button>
+</header>
+
+<main>
+  <!-- Navigation -->
+  <div class="card" style="grid-column:1/-1;">
+    <div class="nav-buttons">
+      <button class="secondary" id="inboxBtn" onclick="showInbox()">Εισερχόμενα <span id="unreadCount" class="red-circle" style="display:none;"></span></button>
+      <button class="secondary" onclick="showSent()">Εξερχόμενα</button>
+      <button class="secondary" onclick="showSend()">Αποστολή</button>
+    </div>
+  </div>
+
+  <!-- Inbox -->
+  <section class="card" id="inboxSection">
+    <div class="toolbar">
+      <h2 style="margin:0">Εισερχόμενα</h2>
+      <button class="secondary" onclick="loadInbox()">Ανανέωση</button>
+    </div>
+    <div id="inboxList" class="list"><div class="muted">Φόρτωση...</div></div>
+  </section>
+
+  <!-- Sent -->
+  <section class="card" id="sentSection" style="display:none;">
+    <div class="toolbar">
+      <h2 style="margin:0">Απεσταλμένα</h2>
+      <button class="secondary" onclick="loadSent()">Ανανέωση</button>
+    </div>
+    <div id="sentList" class="list"><div class="muted">Φόρτωση...</div></div>
+  </section>
+
+  <!-- Send Message -->
+  <section class="card" id="sendSection" style="display:none;">
+    <h2>Νέο Μήνυμα</h2>
+    <form id="sendForm">
+      <label>Παραλήπτης</label>
+      <input name="receiver" required />
+
+      <label>Θέμα</label>
+      <input name="subject" />
+
+      <label>Μήνυμα</label>
+      <textarea name="body" required></textarea>
+
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <button class="primary" type="submit">Αποστολή</button>
+        <button class="secondary" type="reset">Καθαρισμός</button>
+        <button class="secondary" type="button" onclick="loadRecommended()">Προτεινόμενοι Χρήστες</button>
+      </div>
+    </form>
+    <div id="recommended" class="list" style="margin-top:10px;"></div>
+  </section>
+</main>
+
+<script>
+let user = null;
+function esc(s){ return s===undefined||s===null?'':String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+function formatDate(d){ if(!d) return '-'; const dt=new Date(d); return dt.toLocaleString('el-GR'); }
+function goHub(){ window.location.href='/hub.html'; }
+
+function showInbox(){ document.getElementById('inboxSection').style.display='block'; document.getElementById('sentSection').style.display='none'; document.getElementById('sendSection').style.display='none'; loadInbox(); }
+function showSent(){ document.getElementById('inboxSection').style.display='none'; document.getElementById('sentSection').style.display='block'; document.getElementById('sendSection').style.display='none'; loadSent(); }
+function showSend(){ document.getElementById('inboxSection').style.display='none'; document.getElementById('sentSection').style.display='none'; document.getElementById('sendSection').style.display='block'; }
+
+async function init(){
+  try{
+    const res = await fetch('/api/current-user');
+    if(res.ok){
+      const data = await res.json();
+      user = data.username || null;
+      document.getElementById('who').textContent = user;
+    }
+  }catch(e){}
+  updateUnreadCount();
+  loadInbox();
+}
+
+// Update unread count
+async function updateUnreadCount(){
+  try{
+    const res = await fetch('/api/messages/unread-count');
+    if(res.ok){
+      const data = await res.json();
+      const el = document.getElementById('unreadCount');
+      if(data.unread>0){ el.style.display='inline'; el.textContent=data.unread; } else el.style.display='none';
+    }
+  }catch(e){}
+}
+
+// Inbox
+async function loadInbox(){
+  const box=document.getElementById('inboxList');
+  box.innerHTML='<div class="muted">Φόρτωση...</div>';
+  try{
+    const res=await fetch('/api/messages');
+    if(!res.ok){ box.innerHTML='<div class="muted">Σφάλμα φόρτωσης.</div>'; return; }
+    const msgs=await res.json();
+    if(!msgs.length){ box.innerHTML='<div class="muted">Κανένα μήνυμα.</div>'; return; }
+    box.innerHTML='';
+    msgs.forEach(m=>{
+      const div=document.createElement('div'); div.className='card-small';
+      div.innerHTML=`<div><b>${esc(m.subject||'(χωρίς θέμα)')}</b></div>
+        <div class="muted">Από: ${esc(m.sender_username)} • ${formatDate(m.sent_at)}</div>
+        <div>${esc(m.body)}</div>
+        <div style="margin-top:4px;">
+          <button class="secondary" onclick="replyMessage('${esc(m.sender_username)}','${esc(m.subject||'')}')">Απάντηση</button>
+          <button class="secondary" onclick="markRead(${m.id}, this)">Σημάνση ως διαβασμένο</button>
+          <button class="danger" onclick="deleteInbox(${m.id})">Διαγραφή</button>
+        </div>`;
+      box.appendChild(div);
+    });
+  }catch(e){ box.innerHTML='<div class="muted">Σφάλμα.</div>'; }
+}
+
+// Sent
+async function loadSent(){
+  const box=document.getElementById('sentList');
+  box.innerHTML='<div class="muted">Φόρτωση...</div>';
+  try{
+    const res=await fetch('/api/messages/sent');
+    if(!res.ok){ box.innerHTML='<div class="muted">Σφάλμα φόρτωσης.</div>'; return; }
+    const msgs=await res.json();
+    if(!msgs.length){ box.innerHTML='<div class="muted">Κανένα απεσταλμένο.</div>'; return; }
+    box.innerHTML='';
+    msgs.forEach(m=>{
+      const div=document.createElement('div'); div.className='card-small';
+      div.innerHTML=`<div><b>${esc(m.subject||'(χωρίς θέμα)')}</b></div>
+        <div class="muted">Προς: ${esc(m.receiver_username)} • ${formatDate(m.sent_at)}</div>
+        <div>${esc(m.body)}</div>
+        <div style="margin-top:4px;">
+          <button class="danger" onclick="deleteSent(${m.id})">Διαγραφή</button>
+        </div>`;
+      box.appendChild(div);
+    });
+  }catch(e){ box.innerHTML='<div class="muted">Σφάλμα.</div>'; }
+}
+
+// Mark as read
+async function markRead(id, el){
+  try{
+    const res = await fetch('/api/messages/'+id+'/read',{method:'POST'});
+    if(res.ok){
+      alert('Το μήνυμα σημάνθηκε ως διαβασμένο');
+      updateUnreadCount();
+    }
+  }catch(e){}
+}
+
+// Delete inbox
+async function deleteInbox(id){
+  try{
+    const res = await fetch('/api/messages/'+id+'/delete-rec',{method:'POST'});
+    if(res.ok) loadInbox();
+  }catch(e){}
+}
+
+// Delete sent
+async function deleteSent(id){
+  try{
+    const res = await fetch('/api/messages/'+id+'/delete-send',{method:'POST'});
+    if(res.ok) loadSent();
+  }catch(e){}
+}
+
+// Reply
+function replyMessage(sender, subject){
+  sendForm.receiver.value = sender;
+  sendForm.subject.value = subject ? `RE: ${subject}` : '';
+  showSend();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+// Send message
+const sendForm=document.getElementById('sendForm');
+sendForm.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const fd=new FormData(sendForm);
+  const payload={receiver:fd.get('receiver'), subject:fd.get('subject'), body:fd.get('body')};
+  try{
+    const res=await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||'Αποτυχία');
+    alert('Το μήνυμα στάλθηκε!');
+    sendForm.reset();
+    loadSent();
+  }catch(err){ alert('Σφάλμα: '+err.message); }
+});
+
+// Recommended users
+async function loadRecommended(){
+  const box=document.getElementById('recommended');
+  box.innerHTML='<div class="muted">Φόρτωση...</div>';
+  try{
+    const res=await fetch('/api/recommended-users');
+    const users=await res.json();
+    if(!users.length){ box.innerHTML='<div class="muted">Κανένας διαθέσιμος.</div>'; return; }
+    box.innerHTML='';
+    users.forEach(u=>{
+      const div=document.createElement('div'); div.className='card-small';
+      div.innerHTML=`<div><b>${esc(u.username)}</b> (rating: ${esc(u.rating||'-')})</div>
+        <button class="secondary" onclick="chooseUser('${esc(u.username)}')">Επιλογή</button>`;
+      box.appendChild(div);
+    });
+  }catch(e){ box.innerHTML='<div class="muted">Σφάλμα.</div>'; }
+}
+
+function chooseUser(name){ sendForm.receiver.value=name; }
+
+init();
+</script>
+</body>
+</html>

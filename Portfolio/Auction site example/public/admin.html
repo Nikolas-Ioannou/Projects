@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<title>Διαχειριστής</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 0; background: #f8f9fa; display: flex; }
+#sidebar { display: flex; flex-direction: column; padding: 20px; width: 180px; background: #fff; height: 100vh; align-items: center; box-shadow: 2px 0 5px rgba(0,0,0,0.05);}
+.logo-container { padding: 10px; border-radius: 10px; margin-bottom: 20px; display: flex; justify-content: center; align-items: center;}
+.logo { width: 150px; height: auto; display: block;}
+#content { flex:1; padding: 20px; overflow-y: auto;}
+#header-text { font-size: 20px; font-weight: bold; margin-bottom: 20px; text-align: center;}
+.section { margin-top: 20px;}
+.user-card, .auction-card { border:1px solid #ccc; padding:10px; margin:5px 0; background:#fff; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.05);}
+input[type="text"], input[type="number"], input[type="email"], input[type="password"] { display:block; margin:5px 0; padding:5px; width:300px;}
+#searchBar, #auctionFilters { margin-bottom:10px;}
+.pagination { margin-top:10px; display:flex; align-items:center; gap:8px; }
+.pagination button { padding:6px 10px; }
+button { padding:8px 12px; border:none; border-radius:8px; cursor:pointer; font-size:14px;}
+.primary { background-color:#111; color:#fff; }
+.secondary { background-color:#e9ecef; color:#111; }
+.danger { background-color:#dc3545; color:#fff; }
+button:disabled { opacity:0.5; cursor:not-allowed;}
+#sidebar button { width:100%; margin:5px 0; display:block; text-align:center;}
+img.auction-img { max-width:150px; max-height:100px; margin:2px;}
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <div class="logo-container">
+    <img src="logo.png" alt="Logo" class="logo">
+  </div>
+  <div id="header-text">Πίνακας Διαχειριστή</div>
+  <button class="secondary" onclick="togglePending()">Εισερχόμενες Εγγραφές</button>
+  <button class="secondary" onclick="toggleApproved()">Εγκεκριμένοι Χρήστες</button>
+  <button class="secondary" onclick="toggleAdminInfo()">Τα Στοιχεία Μου</button>
+  <button class="secondary" onclick="toggleAuctions()">Δημοπρασίες</button>
+  <button class="secondary" onclick="logout()">Έξοδος</button>
+</div>
+<div id="content">
+  <!-- Pending Users -->
+  <div id="pending" class="section" style="display:none;">
+    <div id="pending-list"></div>
+    <div class="pagination">
+      <button class="secondary" id="pendingPrev" onclick="changePendingPage(-1)">Προηγούμενη</button>
+      <span id="pendingPageInfo"></span>
+      <button class="secondary" id="pendingNext" onclick="changePendingPage(1)">Επόμενη</button>
+    </div>
+  </div>
+  <!-- Approved Users -->
+  <div id="approved" class="section" style="display:none;">
+    <input type="text" id="searchBar" placeholder="Αναζήτηση χρηστών..." onkeyup="filterUsers()">
+    <div id="approved-list"></div>
+    <div class="pagination">
+      <button class="secondary" id="approvedPrev" onclick="changeApprovedPage(-1)">Προηγούμενη</button>
+      <span id="approvedPageInfo"></span>
+      <button class="secondary" id="approvedNext" onclick="changeApprovedPage(1)">Επόμενη</button>
+    </div>
+  </div>
+  <!-- Admin Info -->
+  <div id="admin-info" class="section" style="display:none"></div>
+  <!-- Auctions -->
+  <div id="auctions" class="section" style="display:none;">
+    <h2>Δημοπρασίες</h2>
+    <div id="auctionFilters">
+      <input type="text" id="filterCategory" placeholder="Κατηγορία">
+      <input type="text" id="filterDescription" placeholder="Περιγραφή">
+      <input type="text" id="filterLocation" placeholder="Τοποθεσία">
+      <input type="number" id="filterMinPrice" placeholder="Ελάχιστη Τιμή">
+      <input type="number" id="filterMaxPrice" placeholder="Μέγιστη Τιμή">
+      <button class="primary" onclick="loadAuctions()">Φιλτράρισμα</button>
+      <button class="secondary" onclick="exportSelected()">Εξαγωγή Επιλεγμένων</button>
+    </div>
+    <div id="auction-list"></div>
+    <div class="pagination">
+      <button class="secondary" id="prevPage" onclick="changeAuctionPage(-1)">Προηγούμενη</button>
+      <span id="auctionPageInfo"></span>
+      <button class="secondary" id="nextPage" onclick="changeAuctionPage(1)">Επόμενη</button>
+    </div>
+  </div>
+</div>
+<script>
+function logout(){ window.location.href='/'; }
+function toggleSection(id){
+  const section = document.getElementById(id);
+  const isVisible = section.style.display==='block';
+  ['pending','approved','admin-info','auctions'].forEach(sec=>document.getElementById(sec).style.display='none');
+  if(!isVisible) section.style.display='block';
+}
+function togglePending(){ toggleSection('pending'); loadPending(); }
+function toggleApproved(){ toggleSection('approved'); loadApproved(); }
+function toggleAdminInfo(){ toggleSection('admin-info'); loadAdminInfo(); }
+function toggleAuctions(){ toggleSection('auctions'); loadAuctions(); }
+// Pending Users
+let pendingPage=1;
+const pageSize=10;
+async function loadPending(){
+  const res = await fetch(`/api/pending-users?page=${pendingPage}&pageSize=${pageSize}`);
+  const data = await res.json();
+  const container = document.getElementById('pending-list');
+  container.innerHTML="";
+  if(data.users.length===0){ container.innerHTML="<h3>Δεν υπάρχουν νέες εγγραφές</h3>"; }
+  else data.users.forEach(u=>{
+    container.innerHTML+=`<div class="user-card">
+      <p><b>${u.username}</b> - ${u.first_name} ${u.last_name}</p>
+      <p>Email: ${u.email}, Τηλέφωνο: ${u.phone}, Διεύθυνση: ${u.address}, Τοποθεσία: ${u.location}, ΑΦΜ: ${u.afm}</p>
+      <button class="primary" onclick="approveUser('${u.username}')">Αποδοχή</button>
+      <button class="danger" onclick="declineUser('${u.username}')">Απόρριψη</button>
+    </div>`;
+  });
+  document.getElementById('pendingPageInfo').innerText=`Σελίδα ${data.currentPage} από ${data.totalPages}`;
+  document.getElementById('pendingPrev').disabled=data.currentPage<=1;
+  document.getElementById('pendingNext').disabled=data.currentPage>=data.totalPages;
+}
+function changePendingPage(delta){ pendingPage+=delta; loadPending(); }
+function approveUser(username){ fetch('/api/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username})}).then(()=>loadPending()); }
+function declineUser(username){ fetch('/api/decline',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username})}).then(()=>loadPending()); }
+// Approved Users
+let approvedPage=1;
+async function loadApproved(){
+  const res = await fetch(`/api/approved-users?page=${approvedPage}&pageSize=${pageSize}`);
+  const data = await res.json();
+  const container = document.getElementById('approved-list');
+  container.innerHTML="";
+  if(data.users.length===0){ container.innerHTML="<p>Δεν υπάρχουν εγκεκριμένοι χρήστες</p>"; }
+  else data.users.forEach(u=>{
+    if(u.is_admin) return;
+    container.innerHTML+=`<div class="user-card approved-user">
+      <p><b>${u.username}</b> - ${u.first_name} ${u.last_name}</p>
+      <p>Email: ${u.email}, Τηλέφωνο: ${u.phone}, Διεύθυνση: ${u.address}, Τοποθεσία: ${u.location}, ΑΦΜ: ${u.afm}</p>
+      <button class="danger" onclick="removeUser('${u.username}')">Διαγραφή</button>
+    </div>`;
+  });
+  document.getElementById('approvedPageInfo').innerText=`Σελίδα ${data.currentPage} από ${data.totalPages}`;
+  document.getElementById('approvedPrev').disabled=data.currentPage<=1;
+  document.getElementById('approvedNext').disabled=data.currentPage>=data.totalPages;
+}
+function changeApprovedPage(delta){ approvedPage+=delta; loadApproved(); }
+function removeUser(username){ fetch('/api/remove-user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username})}).then(()=>loadApproved()); }
+function filterUsers(){ 
+  const input=document.getElementById('searchBar').value.toLowerCase();
+  document.querySelectorAll('.approved-user').forEach(user=>{
+    const username=user.querySelector('p b').innerText.toLowerCase();
+    user.style.display=username.startsWith(input)?'block':'none';
+  });
+}
+// Admin Info
+async function loadAdminInfo(){
+  const res = await fetch('/api/admin-info');
+  const info = await res.json();
+  const div = document.getElementById('admin-info');
+  div.innerHTML=`
+    <h2>Τα Στοιχεία Μου</h2>
+    <p><b>Username:</b> ${info.username}</p>
+    <p><b>Όνομα:</b> ${info.first_name}</p>
+    <p><b>Επώνυμο:</b> ${info.last_name}</p>
+    <p><b>Email:</b> ${info.email}</p>
+    <p><b>Τηλέφωνο:</b> ${info.phone}</p>
+    <p><b>Διεύθυνση:</b> ${info.address}</p>
+    <p><b>Τοποθεσία:</b> ${info.location}</p>
+    <p><b>ΑΦΜ:</b> ${info.afm}</p>
+    <button class="primary" onclick="showAdminEdit()">Τροποποίηση</button>
+    <div id="admin-edit" style="display:none; margin-top:10px;"></div>
+  `;
+}
+function showAdminEdit(){
+  const div = document.getElementById('admin-edit');
+  if(div.style.display==='block'){ div.style.display='none'; return; }
+  fetch('/api/admin-info').then(r=>r.json()).then(info=>{
+    div.style.display='block';
+    div.innerHTML=`
+      <input type="text" id="editFirst" placeholder="Όνομα" value="${info.first_name}">
+      <input type="text" id="editLast" placeholder="Επώνυμο" value="${info.last_name}">
+      <input type="email" id="editEmail" placeholder="Email" value="${info.email}">
+      <input type="text" id="editPhone" placeholder="Τηλέφωνο" value="${info.phone}">
+      <input type="text" id="editAddress" placeholder="Διεύθυνση" value="${info.address}">
+      <input type="text" id="editLocation" placeholder="Τοποθεσία" value="${info.location}">
+      <input type="text" id="editAFM" placeholder="ΑΦΜ" value="${info.afm}">
+      <input type="password" id="currentPassword" placeholder="Τρέχων Κωδικός">
+      <input type="password" id="newPassword" placeholder="Νέος Κωδικός">
+      <input type="password" id="confirmPassword" placeholder="Επιβεβαίωση Νέου Κωδικού">
+      <button class="primary" onclick="updateAdmin()">Αποθήκευση</button>
+    `;
+  });
+}
+function updateAdmin(){
+  const data = {
+    first_name: document.getElementById('editFirst').value,
+    last_name: document.getElementById('editLast').value,
+    email: document.getElementById('editEmail').value,
+    phone: document.getElementById('editPhone').value,
+    address: document.getElementById('editAddress').value,
+    location: document.getElementById('editLocation').value,
+    afm: document.getElementById('editAFM').value,
+    current_password: document.getElementById('currentPassword').value,
+    new_password: document.getElementById('newPassword').value
+  };
+  const confirmPass = document.getElementById('confirmPassword').value;
+  if(data.new_password && data.new_password!==confirmPass){ return alert('Οι κωδικοί δεν ταιριάζουν'); }
+  fetch('/api/update-admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    .then(r=>r.json()).then(res=>{
+      alert(res.message);
+      if(res.success) loadAdminInfo();
+    });
+}
+// Auctions
+let auctionPage=1;
+async function loadAuctions(page = 1) {
+  auctionPage = page;
+  const category = document.getElementById('filterCategory').value;
+  const description = document.getElementById('filterDescription').value;
+  const location = document.getElementById('filterLocation').value;
+  const minPrice = document.getElementById('filterMinPrice').value;
+  const maxPrice = document.getElementById('filterMaxPrice').value;
+  const params = new URLSearchParams({ category, description, location, minPrice, maxPrice, page: auctionPage, pageSize: 10 });
+  const res = await fetch('/api/all-auctions?' + params.toString());
+  const data = await res.json();
+  const list = document.getElementById('auction-list');
+  list.innerHTML = '';
+  if (data.auctions.length === 0) {
+    list.innerHTML = "<p>Δεν υπάρχουν δημοπρασίες</p>";
+  } else {
+    data.auctions.forEach(a => {
+      let imagesHtml = a.images.map(url => `<img src="${url}" style="max-width:100px; margin:5px;">`).join('');
+      list.innerHTML += `
+        <div class="auction-card">
+          <input type="checkbox" name="selectAuction" value="${a.id}">
+          <p><b>${a.name}</b> - ${a.seller} | Αξιολόγηση πωλητή: ${a.seller_rating}</p>
+          <p>Αρχική τιμή: ${a.first_bid} | Τρέχουσα τιμή: ${a.currently}</p>
+          <p>Κατάσταση: ${a.status} | Τοποθεσία: ${a.location}</p>
+          <p>Περιγραφή: ${a.description}</p>
+          <p>Κατηγορίες: ${a.categories}</p>
+          <div>${imagesHtml}</div>
+        </div>`;
+    });
+  }
+
+  document.getElementById('auctionPageInfo').innerText = `Σελίδα ${data.currentPage} από ${data.totalPages}`;
+  document.getElementById('prevPage').disabled = data.currentPage <= 1;
+  document.getElementById('nextPage').disabled = data.currentPage >= data.totalPages;
+}
+function changeAuctionPage(delta) {
+  loadAuctions(auctionPage + delta);
+}
+async function exportSelected() {
+  const checkboxes = document.querySelectorAll('input[name="selectAuction"]:checked');
+  const ids = Array.from(checkboxes).map(cb => parseInt(cb.value));
+  if (ids.length === 0) return alert('Επιλέξτε τουλάχιστον μία δημοπρασία');
+
+  const res = await fetch('/api/auctions/export-xml', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auctionIds: ids })
+  });
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'selected_auctions.xml';
+  a.click();
+}
+// Initial load
+loadPending(); loadApproved(); loadAuctions();
+</script>
+</body>
+</html>

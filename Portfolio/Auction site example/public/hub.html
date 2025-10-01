@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8">
+  <title>Hub</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+    .logo { width: 150px; margin-bottom: 20px; }
+    h1 { color: #333; margin-bottom: 30px; }
+    .button-container { display: flex; flex-direction: column; align-items: center; gap: 15px; margin-top: 20px; }
+    button { padding: 10px 20px; background-color: black; color: white; border: none; border-radius: 5px; cursor: pointer; width: 250px; }
+    button:hover { background-color: #555; }
+  </style>
+</head>
+<body>
+  <img src="logo.png" alt="Logo" class="logo">
+  <h1>Καλωσήρθες, <span id="username">Χρήστη</span>!</h1>
+  <div class="button-container">
+    <button onclick="goManage()">Διαχείριση Δημοπρασιών</button>
+    <button onclick="goBrowse()">Αναζήτηση Δημοπρασιών</button>
+    <button onclick="goInfoUser()">Τα στοιχεία μου</button>
+    <button onclick="goRecommendations()">Προτεινόμενα Αντικείμενα</button>
+    <button onclick="goMessages()">Μηνύματα</button>
+    <button onclick="logout()">Έξοδος</button>
+  </div>
+  <script>
+    let user = null;
+    async function init() {
+      try {
+        const res = await fetch('/api/current-user', { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('Not logged in');
+        const data = await res.json();
+        user = data.username;
+        document.getElementById('username').innerText = user;
+      } catch {
+        document.getElementById('username').innerText = 'Χρήστη';
+      }
+    }
+    function goManage() { window.location.href = '/manage.html'; }
+    function goBrowse() { window.location.href = '/browse.html'; }
+    function goInfoUser() { window.location.href = '/infouser.html'; }
+    function goRecommendations() { window.location.href = '/recommendations.html'; }
+    function goMessages() { window.location.href = '/messages.html'; }
+    function logout() {
+      fetch('/logout', { method: 'POST', credentials: 'same-origin' }).finally(() => {
+        window.location.href = '/welcome.html';
+      });
+    }
+    init();
+  </script>
+</body>
+</html>

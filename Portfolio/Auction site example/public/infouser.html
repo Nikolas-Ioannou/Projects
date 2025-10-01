@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<title>Τα Στοιχεία Μου</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; background:#f6f7fb; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; background:#111; color:#fff; }
+  header h1 { margin: 0; }
+  header .user-actions { display: flex; gap: 15px; }
+  header button { padding:6px 12px; border:none; border-radius:8px; cursor:pointer; }
+
+  main { max-width: 600px; margin: 30px auto; background: #fff; padding: 20px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,.1);}
+  .form-group { margin-bottom: 15px; }
+  .form-group label { display:block; margin-bottom: 5px; font-weight:bold; }
+  .form-group input { width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; }
+
+  .buttons { display:flex; gap:10px; margin-top:20px; }
+  .buttons button { flex:1; padding:10px; border:none; border-radius:8px; cursor:pointer; }
+  .edit-btn { background:#111; color:#fff; }
+  .save-btn { background:green; color:#fff; display:none; }
+  .cancel-btn { background:red; color:#fff; display:none; }
+
+  #message { margin-top:15px; font-weight:bold; }
+  #message.error { color:red; }
+  #message.success { color:green; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Τα Στοιχεία Μου</h1>
+  <div class="user-actions">
+    <button onclick="goHub()">⬅ Επιστροφή</button>
+  </div>
+</header>
+<main>
+  <form id="infoForm">
+    <div class="form-group"><label>Όνομα Χρήστη</label><input type="text" id="username" disabled></div>
+    <div class="form-group"><label>Όνομα</label><input type="text" id="first_name" disabled></div>
+    <div class="form-group"><label>Επώνυμο</label><input type="text" id="last_name" disabled></div>
+    <div class="form-group"><label>Email</label><input type="email" id="email" disabled></div>
+    <div class="form-group"><label>Τηλέφωνο</label><input type="text" id="phone" disabled></div>
+    <div class="form-group"><label>Διεύθυνση</label><input type="text" id="address" disabled></div>
+    <div class="form-group"><label>Τοποθεσία</label><input type="text" id="location" disabled></div>
+    <div class="form-group"><label>ΑΦΜ</label><input type="text" id="afm" disabled></div>
+    <div id="passwordFields" style="display:none;">
+      <div class="form-group"><label>Τρέχων Κωδικός</label><input type="password" id="currentPassword"></div>
+      <div class="form-group"><label>Νέος Κωδικός</label><input type="password" id="newPassword"></div>
+      <div class="form-group"><label>Επιβεβαίωση Νέου Κωδικού</label><input type="password" id="confirmPassword"></div>
+    </div>
+    <div class="buttons">
+      <button type="button" class="edit-btn" id="editBtn">Διαμόρφωση</button>
+      <button type="submit" class="save-btn" id="saveBtn">Αποθήκευση</button>
+      <button type="button" class="cancel-btn" id="cancelBtn">Ακύρωση</button>
+    </div>
+  </form>
+  <div id="message"></div>
+</main>
+<script>
+let editing = false;
+async function loadUser() {
+  const res = await fetch('/api/user-info');
+  if (!res.ok) { document.getElementById('message').innerText = "Σφάλμα φόρτωσης"; return; }
+  const user = await res.json();
+  document.getElementById('username').value = user.username;
+  document.getElementById('first_name').value = user.first_name;
+  document.getElementById('last_name').value = user.last_name;
+  document.getElementById('email').value = user.email;
+  document.getElementById('phone').value = user.phone || '';
+  document.getElementById('address').value = user.address || '';
+  document.getElementById('location').value = user.location || '';
+  document.getElementById('afm').value = user.afm || '';
+}
+function toggleEdit(enable) {
+  editing = enable;
+  const inputs = document.querySelectorAll('#infoForm input:not(#username)');
+  inputs.forEach(inp => inp.disabled = !enable);
+  document.getElementById('passwordFields').style.display = enable ? 'block' : 'none';
+  document.getElementById('editBtn').style.display = enable ? 'none' : 'inline-block';
+  document.getElementById('saveBtn').style.display = enable ? 'inline-block' : 'none';
+  document.getElementById('cancelBtn').style.display = enable ? 'inline-block' : 'none';
+}
+document.getElementById('editBtn').addEventListener('click', () => toggleEdit(true));
+document.getElementById('cancelBtn').addEventListener('click', () => { toggleEdit(false); loadUser(); });
+document.getElementById('infoForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = {
+    first_name: document.getElementById('first_name').value,
+    last_name: document.getElementById('last_name').value,
+    email: document.getElementById('email').value,
+    phone: document.getElementById('phone').value,
+    address: document.getElementById('address').value,
+    location: document.getElementById('location').value,
+    afm: document.getElementById('afm').value,
+    currentPassword: document.getElementById('currentPassword').value,
+    newPassword: document.getElementById('newPassword').value,
+    confirmPassword: document.getElementById('confirmPassword').value
+  };
+  const res = await fetch('/api/user-update', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+  const data = await res.json();
+  const msg = document.getElementById('message');
+  if (res.ok && data.success) {
+    msg.textContent = "Επιτυχής ενημέρωση!";
+    msg.className = "success";
+    toggleEdit(false);
+  } else {
+    msg.textContent = data.error || "Σφάλμα!";
+    msg.className = "error";
+  }
+});
+function goHub(){ window.location.href='/hub.html'; }
+loadUser();
+</script>
+</body>
+</html>

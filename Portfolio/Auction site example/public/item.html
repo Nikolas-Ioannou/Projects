@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<title>Λεπτομέρειες Δημοπρασίας</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f6f7fb; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; background:#111; color:#fff; }
+  header h1 { margin:0; font-size:20px; }
+  header button { padding:6px 12px; background:#fff; color:#111; border:none; border-radius:5px; cursor:pointer; }
+
+  main { padding:20px; display:flex; flex-direction:column; gap:20px; max-width:900px; margin:0 auto; }
+  .info { display:flex; flex-direction:column; gap:8px; background:#fff; padding:16px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1);}
+  .info div { font-size:14px; }
+  .photos { display:flex; gap:10px; overflow-x:auto; margin-top:8px; }
+  .photos img { max-height:150px; border-radius:6px; }
+
+  #map { height:300px; border-radius:8px; margin-top:12px; }
+
+  .bid-section { background:#fff; padding:16px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1); display:flex; flex-direction:column; gap:12px; }
+  .bid-section input { padding:8px; width:150px; border:1px solid #ccc; border-radius:5px; }
+  .bid-section button { padding:8px 12px; border:none; background:#111; color:#fff; border-radius:5px; cursor:pointer; }
+
+  .previous-bids { background:#fff; padding:16px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+  .previous-bids div { padding:4px 0; border-bottom:1px solid #eee; font-size:14px; }
+  .previous-bids div:last-child { border-bottom:none; }
+  .muted { color:#666; font-size:13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Λεπτομέρειες Δημοπρασίας</h1>
+  <div style="margin-left:auto; display:flex; align-items:center; gap:15px;">
+    <span id="who" style="color:#fff;"></span>
+  <button onclick="goBack()">⬅ Επιστροφή</button>
+</header>
+
+<main>
+  <div class="info">
+    <div><strong>Όνομα:</strong> <span id="itemName"></span></div>
+    <div><strong>Περιγραφή:</strong> <span id="itemDesc"></span></div>
+    <div><strong>Τοποθεσία:</strong> <span id="itemLocation"></span></div>
+    <div><strong>Λήξη:</strong> <span id="itemEnds"></span></div>
+    <div class="photos" id="itemPhotos"></div>
+    <div id="map"></div>
+  </div>
+
+  <div class="bid-section" id="bidSection">
+    <label>Νέα Προσφορά (€):
+      <input type="number" step="0.01" id="bidAmount">
+    </label>
+    <button onclick="placeBid()">Καταχώρηση Προσφοράς</button>
+    <div class="muted" id="minBidInfo"></div>
+  </div>
+
+  <div class="previous-bids" id="prevBids">
+    <strong>Προηγούμενες Προσφορές:</strong>
+    <div class="muted">Φόρτωση...</div>
+  </div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let itemId = new URLSearchParams(window.location.search).get('id');
+let minBid = 0;
+let map = null;
+let itemLat = null;
+let itemLon = null;
+
+function goBack() { window.location.href='/browse.html'; }
+
+async function loadItem() {
+  try {
+    const res = await fetch(`/api/auctions/${itemId}`, { credentials: 'include' });
+    if(!res.ok) throw new Error('Δεν βρέθηκε η δημοπρασία');
+    const item = await res.json();
+    document.getElementById('itemName').innerText = item.name;
+    document.getElementById('itemDesc').innerText = item.description || '-';
+    document.getElementById('itemLocation').innerText = item.location || '-';
+    document.getElementById('itemEnds').innerText = new Date(item.ends).toLocaleString('el-GR');
+    const photosDiv = document.getElementById('itemPhotos');
+    photosDiv.innerHTML = '';
+    (item.images || []).forEach(url=>{
+      const img = document.createElement('img');
+      img.src = url;
+      photosDiv.appendChild(img);
+    });
+    // Map
+    itemLat = Number(item.latitude);
+    itemLon = Number(item.longitude);
+    if(!isNaN(itemLat) && !isNaN(itemLon)){
+      if(map) map.remove(); 
+      map = L.map('map').setView([itemLat, itemLon], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+      L.marker([itemLat, itemLon]).addTo(map)
+        .bindPopup(item.name).openPopup();
+    } else {
+      document.getElementById('map').innerText = 'Δεν υπάρχει γεωγραφική θέση';
+    }
+    minBid = Number(item.currently) || Number(item.first_bid);
+    document.getElementById('minBidInfo').innerText = `Η ελάχιστη προσφορά είναι ${minBid.toFixed(2)}€`;
+    // Disable bid if auction ended
+    const now = new Date();
+    if(new Date(item.ends) < now || item.status !== 'active'){
+      document.getElementById('bidSection').style.display = 'none';
+    }
+
+  } catch(err){
+    alert(err.message);
+  }
+}
+
+async function loadBids() {
+  const bidsDiv = document.getElementById('prevBids');
+  bidsDiv.innerHTML = '<strong>Προηγούμενες Προσφορές:</strong>';
+  try {
+    const res = await fetch(`/api/auctions/${itemId}/bids`, { credentials: 'include' });
+    if(!res.ok) throw new Error('Σφάλμα φόρτωσης προσφορών');
+    const bids = await res.json();
+    if(!bids.length) {
+      bidsDiv.innerHTML += '<div class="muted">Δεν υπάρχουν προηγούμενες προσφορές</div>';
+      return;
+    }
+    bids.forEach(b=>{
+      const d = document.createElement('div');
+      d.innerHTML = `• ${b.bidder_username} — ${Number(b.amount).toFixed(2)}€ <span class="muted">(${new Date(b.time).toLocaleString('el-GR')})</span>`;
+      bidsDiv.appendChild(d);
+    });
+  } catch(err){
+    bidsDiv.innerHTML += '<div class="muted">Σφάλμα φόρτωσης προσφορών</div>';
+  }
+}
+
+async function placeBid() {
+  const amount = parseFloat(document.getElementById('bidAmount').value);
+  if(isNaN(amount)) { alert('Μη έγκυρη τιμή'); return; }
+  if(amount < minBid) { alert(`Η προσφορά πρέπει να είναι τουλάχιστον ${minBid.toFixed(2)}€`); return; }
+
+  if(!confirm(`Είστε σίγουρος/η ότι θέλετε να υποβάλετε αυτήν την προσφορά: ${amount.toFixed(2)}€; Δεν θα μπορεί να αναιρεθεί.`)){
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/auctions/${itemId}/bid`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({amount})
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Αποτυχία καταχώρησης');
+    alert('Η προσφορά καταχωρήθηκε!');
+    document.getElementById('bidAmount').value = '';
+    await loadItem();
+    await loadBids();
+  } catch(err){
+    alert(err.message);
+  }
+}
+async function logVisit() {
+  try {
+    const resUser = await fetch('/api/current-user', { credentials: 'include' });
+    if (!resUser.ok) return; 
+    const userData = await resUser.json();
+    const username = userData.username;
+
+    await fetch('/api/visit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, item_id: itemId })
+    });
+  } catch (err) {
+    console.error('Visit log error:', err);
+  }
+}
+async function loadUser() {
+  try {
+    const res = await fetch('/api/current-user', { credentials: 'include' });
+    if (res.ok) {
+      const data = await res.json();
+      document.getElementById('who').textContent = data.username || '';
+    }
+  } catch (e) {
+    document.getElementById('who').textContent = '';
+  }
+}
+
+loadUser();
+loadItem();
+loadBids();
+logVisit();
+</script>
+</body>
+</html>

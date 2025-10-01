@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="utf-8" />
+  <title>Επεξεργασία Δημοπρασίας</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin:0; background:#f6f7fb; }
+    header { display:flex; align-items:center; gap:12px; padding:16px 24px; background:#111; color:#fff; }
+    main { padding:20px; max-width:800px; margin:0 auto; }
+    h1,h2 { margin:12px 0; }
+    label { display:block; margin:8px 0 4px; font-weight:600; }
+    input, textarea, select { width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; box-sizing:border-box; }
+    textarea { resize: vertical; min-height: 60px; }
+    .row { display:flex; gap:12px; }
+    .row > div { flex:1; }
+    button { padding:10px 14px; border:none; border-radius:8px; cursor:pointer; }
+    .primary { background:#111; color:#fff; }
+    .secondary { background:#e9ecef; }
+    .muted { color:#666; font-size: 13px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Επεξεργασία Δημοπρασίας</h1>
+  <button class="secondary" style="margin-left:auto;" onclick="goBack()">⬅ Επιστροφή</button>
+</header>
+<main>
+  <form id="editForm" autocomplete="off">
+    <div>
+      <label>Όνομα</label>
+      <input name="name" required />
+    </div>
+    <div>
+      <label>Κατηγορίες (κόμμα διαχωρισμός)</label>
+      <input name="categories" />
+    </div>
+    <div class="row">
+      <div>
+        <label>First Bid (€)</label>
+        <input name="first_bid" type="number" min="0" step="0.01" required />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Τοποθεσία</label>
+        <input name="location" required />
+      </div>
+      <div>
+        <label>Χώρα</label>
+        <input name="country" required />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Latitude (προαιρετικό)</label>
+        <input name="latitude" type="number" step="0.000001" />
+      </div>
+      <div>
+        <label>Longitude (προαιρετικό)</label>
+        <input name="longitude" type="number" step="0.000001" />
+      </div>
+    </div>
+    <div>
+      <label>Περιγραφή</label>
+      <textarea name="description" rows="3"></textarea>
+    </div>
+    <div>
+      <label>Εικόνες (URLs – ένα ανά γραμμή)</label>
+      <textarea name="images" rows="3" placeholder="https://...\nhttps://..."></textarea>
+    </div>
+    <div class="row">
+      <div>
+        <label>Έναρξη</label>
+        <input name="started" type="datetime-local" required />
+      </div>
+      <div>
+        <label>Λήξη</label>
+        <input name="ends" type="datetime-local" required />
+      </div>
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px;">
+      <button type="submit" class="primary">Αποθήκευση</button>
+      <button type="button" class="secondary" onclick="goBack()">Ακύρωση</button>
+    </div>
+  </form>
+</main>
+<script>
+let auctionId = null;
+function esc(s){ return s===undefined||s===null?'':String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+function goBack(){ window.location.href='/manage.html'; }
+function getQueryParam(name){
+  const params = new URLSearchParams(window.location.search);
+  return params.get(name);
+}
+function toLocalInput(d){ if(!d) return ''; const dt=new Date(d); if(isNaN(dt)) return ''; const pad=n=>String(n).padStart(2,'0'); const yyyy=dt.getFullYear(); const mm=pad(dt.getMonth()+1); const dd=pad(dt.getDate()); const hh=pad(dt.getHours()); const mi=pad(dt.getMinutes()); return `${yyyy}-${mm}-${dd}T${hh}:${mi}`; }
+async function loadAuction(){
+  auctionId = getQueryParam('id');
+  if(!auctionId){ alert('Σφάλμα: Δεν βρέθηκε ID δημοπρασίας'); goBack(); return; }
+  try{
+    const res = await fetch('/api/auctions/'+encodeURIComponent(auctionId));
+    if(!res.ok) throw new Error('Αποτυχία φόρτωσης');
+    const data = await res.json();
+    const form = document.getElementById('editForm');
+    form.name.value = data.name || '';
+    form.categories.value = (data.categories||[]).join(',');
+    form.first_bid.value = data.first_bid || '';
+    form.location.value = data.location || '';
+    form.country.value = data.country || '';
+    form.latitude.value = data.latitude || '';
+    form.longitude.value = data.longitude || '';
+    form.description.value = data.description || '';
+    form.images.value = (data.images||[]).join('\n');
+    form.started.value = toLocalInput(data.started);
+    form.ends.value = toLocalInput(data.ends);
+  }catch(err){ alert('Σφάλμα: '+err.message); goBack(); }
+}
+// Handle form submit
+const editForm = document.getElementById('editForm');
+editForm.addEventListener('submit', async e=>{
+  e.preventDefault();
+  const fd = new FormData(editForm);
+  const payload = {
+    name: fd.get('name'),
+    categories: (fd.get('categories')||'').split(',').map(s=>s.trim()).filter(Boolean),
+    first_bid: fd.get('first_bid'),
+    location: fd.get('location'),
+    latitude: fd.get('latitude')||null,
+    longitude: fd.get('longitude')||null,
+    country: fd.get('country'),
+    description: fd.get('description'),
+    images: (fd.get('images')||'').split('\n').map(s=>s.trim()).filter(Boolean),
+    started: fd.get('started'),
+    ends: fd.get('ends')
+  };
+  try{
+    const res = await fetch('/api/auctions/'+encodeURIComponent(auctionId), {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error||'Αποτυχία αποθήκευσης');
+    alert('Οι αλλαγές αποθηκεύτηκαν!');
+    goBack();
+  }catch(err){ alert('Σφάλμα: '+err.message); }
+});
+window.onload = loadAuction;
+</script>
+</body>
+</html>
